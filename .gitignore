@@ -1,0 +1,12 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+
+# dotenv file with secrets
+.env
+
+# VS Code settings
+.vscode/
