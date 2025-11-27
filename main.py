@@ -102,3 +102,8 @@ if __name__ == "__main__":
         f.write(png_bytes)
 
     print("Graph saved to graph.png")
+
+    saved_memory = memory.get({"configurable": {"thread_id": thread_id}})
+    print(f"Saved memory: {saved_memory}")
+
+# -
