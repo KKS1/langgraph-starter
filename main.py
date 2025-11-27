@@ -5,9 +5,11 @@ from typing import Dict, List
 from uuid import uuid4
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
+from fastapi import FastAPI
 
 load_dotenv()
 memory = MemorySaver()
@@ -90,9 +92,9 @@ builder.set_finish_point("summarize")
 app = builder.compile(checkpointer=memory)
 
 # --------------------------------------
-# 4. Run it
+# 4. Run it on console and save the graph (Uncomment if needed)
 # --------------------------------------
-if __name__ == "__main__":
+""" if __name__ == "__main__":
     initial_state = {"messages": [], "topic": "", "keep_going": True}
     thread_id = str(uuid4())
     app.invoke(initial_state, config={"configurable": {"thread_id": thread_id}})
@@ -104,6 +106,28 @@ if __name__ == "__main__":
     print("Graph saved to graph.png")
 
     saved_memory = memory.get({"configurable": {"thread_id": thread_id}})
-    print(f"Saved memory: {saved_memory}")
+    print(f"Saved memory: {saved_memory}") """
 
-# -
+# --------------------------------------
+# 4. Create FastAPI app
+# --------------------------------------
+api = FastAPI(title="LangGraph Chat API", description="LangGraph Chat API", version="0.1.0")
+
+class UserInput(BaseModel):
+    content: str
+    continue_conversation: bool = True
+
+@api.post("/chat")
+async def chat(user_input: UserInput, thread_id: str = None):
+    if thread_id is None:
+        thread_id = str(uuid4())
+    initial_state = {"messages": [{"role": "user", "content": user_input.content}], "topic": "", "keep_going": user_input.continue_conversation}
+    result = app.invoke(initial_state, config={"configurable": {"thread_id": str(uuid4())}})
+    return result
+
+# --------------------------------------
+# 5. Run with uvicorn
+# --------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(api, host="0.0.0.0", port=18000)
