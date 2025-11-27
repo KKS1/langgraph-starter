@@ -1,12 +1,16 @@
 # main.py
 from ast import match_case
+from concurrent.futures import thread
 from typing import Dict, List
+from uuid import uuid4
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import MemorySaver
 
 load_dotenv()
+memory = MemorySaver()
 
 # --------------------------------------
 # 1. Define the state that flows between nodes
@@ -83,14 +87,15 @@ builder.add_conditional_edges("ask_continue", lambda state: "greet" if state["ke
 
 builder.set_entry_point("greet")
 builder.set_finish_point("summarize")
-app = builder.compile()
+app = builder.compile(checkpointer=memory)
 
 # --------------------------------------
 # 4. Run it
 # --------------------------------------
 if __name__ == "__main__":
     initial_state = {"messages": [], "topic": "", "keep_going": True}
-    app.invoke(initial_state)
+    thread_id = str(uuid4())
+    app.invoke(initial_state, config={"configurable": {"thread_id": thread_id}})
     png_bytes = app.get_graph().draw_mermaid_png()
 
     with open("graph.png", "wb") as f:
