@@ -1,4 +1,5 @@
 # main.py
+import asyncio
 from typing import List
 from uuid import uuid4
 from dotenv import load_dotenv
@@ -33,18 +34,20 @@ def add_message(state:State, role:str, content:str) -> State:
 # --------------------------------------
 llm = ChatOpenAI(model="gpt-4o-mini")
 
-def greet_user(state:State) -> State:
+async def greet_user(state:State) -> State:
+    if(state.messages): return state
+    
     greeting_msg = "Hello! What do you want to hear today: a joke, trivia, or a quote?"
     state = add_message(state, "assistant", greeting_msg)
-    print(greeting_msg)
+    # print(greeting_msg)
     # user_input = input("You: ")
     # state = add_message(state, "user", user_input)
     return state
 
-def select_topic(state:State) -> State:
+async def select_topic(state:State) -> State:
     # last_msg = state.messages[-1].content
     last_msg = next((msg.content for msg in reversed(state.messages) if msg.role == "user"), "joke")
-    print(f"User: {last_msg}")
+    # print(f"User: {last_msg}")
     match last_msg.lower():
         case x if "joke" in x:
             state.topic = "joke"
@@ -54,19 +57,19 @@ def select_topic(state:State) -> State:
             state.topic = "quote"
         case _:
             state.topic = "joke"
-    print(f"Great Topic: {state.topic}!!")
+    # print(f"Great Topic: {state.topic}!!")
     return state
         
 
-def call_llm(state:State) -> State:
+async def call_llm(state:State) -> State:
     prompt = f"Give me a {state.topic}"
     state = add_message(state, "user", prompt)
-    ai_response = llm.invoke([msg.model_dump() for msg in state.messages])
+    ai_response = await asyncio.to_thread(llm.invoke, [msg.model_dump() for msg in state.messages])
     state = add_message(state, "assistant", ai_response.content)
     print(f"AI: {ai_response.content}")
     return state
 
-def ask_continue(state:State) -> State:
+async def ask_continue(state:State) -> State:
     # continue_prompt = "Do you want to continue with the conversation (y/n)?"
     # state = add_message(state, "assistant", continue_prompt)
     # print(continue_prompt)
@@ -76,10 +79,10 @@ def ask_continue(state:State) -> State:
     state.keep_going = False # since API needs only one execution and no user input on console
     return state
 
-def summarize(state:State) -> State:
+async def summarize(state:State) -> State:
     summary_prompt = "Summarize the conversation in one sentence."
     state = add_message(state, "user", summary_prompt)
-    summary = llm.invoke([msg.model_dump() for msg in state.messages])
+    summary = await asyncio.to_thread(llm.invoke, [msg.model_dump() for msg in state.messages])
     state = add_message(state, "assistant", summary.content)
     print(f"Summary: {summary.content}")
     state.keep_going = False
@@ -138,8 +141,24 @@ class Result(State):
 async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     if thread_id is None:
         thread_id = str(uuid4())
-    state = State(messages=[Message(role="user", content=user_input.content)], keep_going=user_input.continue_conversation)
-    result = app.invoke(state.model_dump(), config={"configurable": {"thread_id": str(uuid4())}})
+
+    saved = memory.get({"configurable": {"thread_id": thread_id}})
+    print(f"Loaded memory: {saved}")
+
+    if saved is None:
+        state = State()
+    else:
+        state = State(**saved)
+
+    state = add_message(state, "user", user_input.content)
+    state.keep_going = user_input.continue_conversation
+    
+    # invoke is for synchronous execution
+    result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
+
+    # memory.aput({"configurable": {"thread_id": thread_id}}, result)
+    print(f"Saved memory: {result}")
+
     return Result(**result, thread_id=thread_id) 
 
 # --------------------------------------
