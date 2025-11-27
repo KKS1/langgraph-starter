@@ -137,9 +137,16 @@ class UserInput(BaseModel):
 async def chat(user_input: UserInput, thread_id: str = None):
     if thread_id is None:
         thread_id = str(uuid4())
-    initial_state = State(messages=[Message(role="user", content=user_input.content)], topic="", keep_going=user_input.continue_conversation)
-    result = app.invoke(initial_state, config={"configurable": {"thread_id": str(uuid4())}})
-    return result
+    state = State(messages=[Message(role="user", content=user_input.content)], keep_going=user_input.continue_conversation)
+    result = app.invoke(state.model_dump(), config={"configurable": {"thread_id": str(uuid4())}})
+    # return thread_id also along with result
+
+    return {
+        "thread_id": thread_id,
+        "messages": [msg.model_dump() for msg in result["messages"]],
+        "keep_going": result["keep_going"],
+        "last_topic": result["topic"],
+    }
 
 # --------------------------------------
 # 5. Run with uvicorn
