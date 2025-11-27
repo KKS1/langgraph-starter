@@ -21,7 +21,7 @@ class Message(BaseModel):
 class State(BaseModel):
     messages: List[Message] = []
     topic: str = ""
-    keep_going: bool = True
+    keep_going: bool = False
 
 #  utility functions
 def add_message(state:State, role:str, content:str) -> State:
@@ -37,12 +37,14 @@ def greet_user(state:State) -> State:
     greeting_msg = "Hello! What do you want to hear today: a joke, trivia, or a quote?"
     state = add_message(state, "assistant", greeting_msg)
     print(greeting_msg)
-    user_input = input("You: ")
-    state = add_message(state, "user", user_input)
+    # user_input = input("You: ")
+    # state = add_message(state, "user", user_input)
     return state
 
 def select_topic(state:State) -> State:
-    last_msg = state.messages[-1].content
+    # last_msg = state.messages[-1].content
+    last_msg = next((msg.content for msg in reversed(state.messages) if msg.role == "user"), "joke")
+    print(f"User: {last_msg}")
     match last_msg.lower():
         case x if "joke" in x:
             state.topic = "joke"
@@ -57,7 +59,7 @@ def select_topic(state:State) -> State:
         
 
 def call_llm(state:State) -> State:
-    prompt = f"Tell me a {state.topic}"
+    prompt = f"Give me a {state.topic}"
     state = add_message(state, "user", prompt)
     ai_response = llm.invoke([msg.model_dump() for msg in state.messages])
     state = add_message(state, "assistant", ai_response.content)
@@ -65,12 +67,13 @@ def call_llm(state:State) -> State:
     return state
 
 def ask_continue(state:State) -> State:
-    continue_prompt = "Do you want to continue with the conversation (y/n)?"
-    state = add_message(state, "assistant", continue_prompt)
-    print(continue_prompt)
-    user_input = input("Yes(y)/No(n): ").strip().lower()
-    state = add_message(state, "user", user_input)
-    state.keep_going = user_input.startswith("y")
+    # continue_prompt = "Do you want to continue with the conversation (y/n)?"
+    # state = add_message(state, "assistant", continue_prompt)
+    # print(continue_prompt)
+    # user_input = input("Yes(y)/No(n): ").strip().lower()
+    # state = add_message(state, "user", user_input)
+    # state.keep_going = user_input.startswith("y")
+    state.keep_going = False # since API needs only one execution and no user input on console
     return state
 
 def summarize(state:State) -> State:
@@ -125,8 +128,8 @@ app = builder.compile(checkpointer=memory)
 api = FastAPI(title="LangGraph Chat API", description="LangGraph Chat API", version="0.1.0")
 
 class UserInput(BaseModel):
-    content: str
-    continue_conversation: bool = True
+    content: str = "Tell me a joke"
+    continue_conversation: bool = False
 
 @api.post("/chat")
 async def chat(user_input: UserInput, thread_id: str = None):
