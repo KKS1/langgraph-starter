@@ -65,11 +65,6 @@ def summarize(state:State) -> State:
     state["keep_going"] = False
     return state
 
-def summarize_or_continue(state:State) -> State:
-    return "greet" if state["keep_going"] else "summarize"
-
-# greet/ get input -> select topic -> call_llm/ show response -> ask_continue -> greet if yes else go to -> summarize
-
 # --------------------------------------
 # 3. Build & Compile the graph
 # --------------------------------------
@@ -84,7 +79,7 @@ builder.add_edge("greet", "select_topic")
 builder.add_edge("select_topic", "call_llm")
 builder.add_edge("call_llm", "ask_continue")
 
-builder.add_conditional_edges("ask_continue", summarize_or_continue)
+builder.add_conditional_edges("ask_continue", lambda state: "greet" if state["keep_going"] else "summarize")
 
 builder.set_entry_point("greet")
 builder.set_finish_point("summarize")
@@ -96,4 +91,9 @@ app = builder.compile()
 if __name__ == "__main__":
     initial_state = {"messages": [], "topic": "", "keep_going": True}
     app.invoke(initial_state)
-    
+    png_bytes = app.get_graph().draw_mermaid_png()
+
+    with open("graph.png", "wb") as f:
+        f.write(png_bytes)
+
+    print("Graph saved to graph.png")
