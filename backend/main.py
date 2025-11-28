@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 memory = MemorySaver()
@@ -71,6 +72,19 @@ app = builder.compile(checkpointer=memory)
 # --------------------------------------
 api = FastAPI(title="LangGraph Chat API", description="LangGraph Chat API", version="0.1.0")
 
+origins = [
+    "http://localhost:3000",
+    # "https://your-frontend-domain.com", 
+]
+
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins='*',         # Allows requests from the origins list
+    allow_credentials=True,        # Allows cookies/auth headers to be included in requests
+    allow_methods=["*"],           # Allows all standard methods (GET, POST, etc.)
+    allow_headers=["*"],           # Allows all headers
+)
+
 # Input/output models
 class UserInput(BaseModel):
     content: str = "Tell me a joke"
@@ -90,6 +104,13 @@ class Result(BaseModel):
 # --------------------
 # POST /chat endpoint
 # --------------------
+@api.get("/messages/{thread_id}")
+async def get_messages(thread_id: str) -> List[Message]:
+    saved = memory.get({"configurable": {"thread_id": thread_id}})
+    if saved and "channel_values" in saved and "messages" in saved["channel_values"]:
+        return [msg.model_dump() for msg in saved["channel_values"]["messages"]]
+    return []
+
 @api.post("/chat")
 async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     if thread_id is None:

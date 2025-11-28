@@ -30,6 +30,26 @@ export const useChat = () => {
   };
 
   useEffect(() => {
+    // first load existing messages for the thread
+    const fetchMessages = async () => {
+      if (!threadId) return;
+
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/messages/${threadId}`
+        );
+        if (!response.ok) {
+          throw new Error('Failed to fetch messages');
+        }
+        const data: Message[] = await response.json();
+        setMessages(data);
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      }
+    };
+
+    fetchMessages();
+
     wsRef.current = new WebSocket(
       `${process.env.NEXT_PUBLIC_WS_BASE_URL}/ws/${threadId || ''}`
     );
