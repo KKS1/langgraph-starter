@@ -68,7 +68,7 @@ export const useChat = () => {
     };
   }, [threadId]);
 
-  return { messages, sendMessage };
+  return { threadId, messages, sendMessage };
 };
 
 export default useChat;
