@@ -1,8 +1,8 @@
 # main.py
-from typing import List
+from enum import Enum
+from typing import List, Optional
 from uuid import uuid4
 from dotenv import load_dotenv
-from fastapi.encoders import jsonable_encoder
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
@@ -70,6 +70,17 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
     return Result(**result, thread_id=thread_id) 
 
+class WSResponseType(str, Enum):
+    UPDATE = "update"
+    DONE = "done"
+    ERROR = "error"
+class WSResponse(BaseModel):
+    thread_id: str
+    type: WSResponseType
+    messages: List[Message] = []
+    node: Optional[str] = None  # optional, which node emitted this
+    content: Optional[str] = None  # optional latest assistant content
+
 # WebSocket endpoint for real-time chat
 @api.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
@@ -89,21 +100,28 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
 
             # Stream assistant response
             async for event in app.astream(state.model_dump(), config={"configurable": {"thread_id": thread_id}}):
-                safe_event = jsonable_encoder(event)
-                safe_event["thread_id"] = thread_id
+                # Flatten event: if dict has single node key, unwrap it
+                inner = list(event.values())[0] if len(event) == 1 else event
+                messages = [msg if isinstance(msg, dict) else msg.model_dump() for msg in inner.get("messages", [])]
 
-                await websocket.send_json(safe_event)
+                ws_payload = WSResponse(
+                    thread_id=thread_id,
+                    type=WSResponseType.UPDATE,
+                    messages=messages,
+                    node=inner.get("node", "call_llm"),
+                    content=messages[-1]["content"] if messages else None
+                )
+
+                await websocket.send_json(ws_payload.model_dump())
             
             # Send done message (optional)
-            await websocket.send_json({"thread_id": thread_id, "type": "done"})
+            await websocket.send_json(WSResponse(thread_id=thread_id, type=WSResponseType.DONE).model_dump())
 
         except WebSocketDisconnect:
             print(f"WebSocket disconnected: {thread_id}")
             break
         except Exception as e:
-            await websocket.send_json({"thread_id": thread_id, "type": "error", "message": str(e)})
-
-
+            await websocket.send_json(WSResponse(thread_id=thread_id, type=WSResponseType.ERROR, content=str(e)).model_dump())
 
 
 # --------------------------------------
