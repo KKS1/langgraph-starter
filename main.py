@@ -54,8 +54,16 @@ api = FastAPI(title="LangGraph Chat API", description="LangGraph Chat API", vers
 class UserInput(BaseModel):
     content: str = "Tell me a joke"
 
-class Result(State):
+class ResponseType(str, Enum):
+    UPDATE = "update"
+    DONE = "done"
+    ERROR = "error"
+class Result(BaseModel):
     thread_id: str
+    type: ResponseType
+    messages: List[Message] = []
+    node: Optional[str] = None  # optional, which node emitted this
+    content: Optional[str] = None  # optional latest assistant content
 
 # Post API endpoint for chat interactions
 @api.post("/chat")
@@ -64,22 +72,31 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
         thread_id = str(uuid4())
 
     saved = memory.get({"configurable": {"thread_id": thread_id}})
-    prev = saved["channel_values"]["messages"] if saved else []
+    prev = []
+    if saved and "channel_values" in saved and "messages" in saved["channel_values"]:
+        prev = [msg.model_dump() for msg in saved["channel_values"]["messages"]]
+
     state = State(messages=prev)
     state = add_message(state, "user", user_input.content)
-    result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
-    return Result(**result, thread_id=thread_id) 
-
-class WSResponseType(str, Enum):
-    UPDATE = "update"
-    DONE = "done"
-    ERROR = "error"
-class WSResponse(BaseModel):
-    thread_id: str
-    type: WSResponseType
-    messages: List[Message] = []
-    node: Optional[str] = None  # optional, which node emitted this
-    content: Optional[str] = None  # optional latest assistant content
+    try:
+        result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
+        messages = [msg if isinstance(msg, dict) else msg.model_dump() for msg in result.get("messages", [])]
+ 
+        return Result(
+            thread_id=thread_id,
+            type=ResponseType.DONE,
+            messages=messages,
+            node="call_llm",
+            content=messages[-1]["content"] if messages else None
+        )
+    except Exception as e:
+        return Result(
+            thread_id=thread_id,
+            type=ResponseType.ERROR,
+            messages=[],
+            node="call_llm",
+            content=str(e)
+        )
 
 # WebSocket endpoint for real-time chat
 @api.websocket("/ws/{thread_id}")
@@ -104,9 +121,9 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 inner = list(event.values())[0] if len(event) == 1 else event
                 messages = [msg if isinstance(msg, dict) else msg.model_dump() for msg in inner.get("messages", [])]
 
-                ws_payload = WSResponse(
+                ws_payload = Result(
                     thread_id=thread_id,
-                    type=WSResponseType.UPDATE,
+                    type=ResponseType.UPDATE,
                     messages=messages,
                     node=inner.get("node", "call_llm"),
                     content=messages[-1]["content"] if messages else None
@@ -115,13 +132,13 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 await websocket.send_json(ws_payload.model_dump())
             
             # Send done message (optional)
-            await websocket.send_json(WSResponse(thread_id=thread_id, type=WSResponseType.DONE).model_dump())
+            await websocket.send_json(Result(thread_id=thread_id, type=ResponseType.DONE).model_dump())
 
         except WebSocketDisconnect:
             print(f"WebSocket disconnected: {thread_id}")
             break
         except Exception as e:
-            await websocket.send_json(WSResponse(thread_id=thread_id, type=WSResponseType.ERROR, content=str(e)).model_dump())
+            await websocket.send_json(Result(thread_id=thread_id, type=ResponseType.ERROR, content=str(e)).model_dump())
 
 
 # --------------------------------------
