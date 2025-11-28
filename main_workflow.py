@@ -3,6 +3,7 @@ import asyncio
 from typing import List
 from uuid import uuid4
 from dotenv import load_dotenv
+from fastapi.responses import StreamingResponse
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
@@ -167,6 +168,14 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     # )
 
     return Result(**result, thread_id=thread_id) 
+
+# --------------------------------------
+# 5. Create FastAPI endpoint for getting graph image
+# --------------------------------------
+@api.get("/graph/image")
+async def get_graph_image():
+    png_bytes = app.get_graph().draw_mermaid_png()
+    return StreamingResponse(content=iter([png_bytes]), media_type="image/png")
 
 # --------------------------------------
 # 5. Run with uvicorn
