@@ -190,6 +190,6 @@ langgraph-starter/
 - Keep your `.env` **private** — do NOT commit it to GitHub.
 - Both POST and WebSocket share the **same response schema**, making frontend integration easier.
 - Memory is automatically handled via `thread_id`.
-- For advanced workflows, consider upgrading LangChain and using `HumanMessage` / `AIMessage` classes.
+- Integrated `HumanMessage` / `AIMessage` classes, for advanced workflows leveraging LangChain tooling.
 
 ---

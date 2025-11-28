@@ -1,9 +1,9 @@
-# main.py
 from enum import Enum
 from typing import List, Optional
 from uuid import uuid4
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from langchain.messages import HumanMessage, AIMessage, AnyMessage
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
@@ -22,18 +22,39 @@ class Message(BaseModel):
 class State(BaseModel):
     messages: List[Message] = []
 
-#  utility functions
-def add_message(state:State, role:str, content:str) -> State:
+# Utility to add messages to state
+def add_message(state: State, role: str, content: str) -> State:
     state.messages.append(Message(role=role, content=content))
     return state
+
+# Convert State.messages -> LangChain messages
+def state_to_lc_msgs(state: State) -> List[AnyMessage]:
+    lc_msgs = []
+    for msg in state.messages:
+        if msg.role == "user":
+            lc_msgs.append(HumanMessage(content=msg.content))
+        else:
+            lc_msgs.append(AIMessage(content=msg.content))
+    return lc_msgs
+
+# Convert LangChain messages -> State.messages dicts
+def lc_msgs_to_state(msgs: List[AnyMessage]) -> List[Message]:
+    res = []
+    for msg in msgs:
+        if isinstance(msg, HumanMessage):
+            res.append(Message(role="user", content=msg.content))
+        elif isinstance(msg, AIMessage):
+            res.append(Message(role="assistant", content=msg.content))
+    return res
 
 # --------------------------------------
 # 2. Define the nodes (functions)
 # --------------------------------------
 llm = ChatOpenAI(model="gpt-4o-mini")
-        
-async def call_llm(state:State) -> State:
-    ai_response = await llm.ainvoke([msg.model_dump() for msg in state.messages])
+
+async def call_llm(state: State) -> State:
+    lc_msgs = state_to_lc_msgs(state)
+    ai_response = await llm.ainvoke(lc_msgs)
     state = add_message(state, "assistant", ai_response.content)
     return state
 
@@ -50,7 +71,7 @@ app = builder.compile(checkpointer=memory)
 # --------------------------------------
 api = FastAPI(title="LangGraph Chat API", description="LangGraph Chat API", version="0.1.0")
 
-# input/output models
+# Input/output models
 class UserInput(BaseModel):
     content: str = "Tell me a joke"
 
@@ -58,14 +79,17 @@ class ResponseType(str, Enum):
     UPDATE = "update"
     DONE = "done"
     ERROR = "error"
+
 class Result(BaseModel):
     thread_id: str
     type: ResponseType
     messages: List[Message] = []
-    node: Optional[str] = None  # optional, which node emitted this
-    content: Optional[str] = None  # optional latest assistant content
+    node: Optional[str] = None
+    content: Optional[str] = None
 
-# Post API endpoint for chat interactions
+# --------------------
+# POST /chat endpoint
+# --------------------
 @api.post("/chat")
 async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     if thread_id is None:
@@ -81,7 +105,7 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     try:
         result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
         messages = [msg if isinstance(msg, dict) else msg.model_dump() for msg in result.get("messages", [])]
- 
+
         return Result(
             thread_id=thread_id,
             type=ResponseType.DONE,
@@ -98,7 +122,9 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
             content=str(e)
         )
 
-# WebSocket endpoint for real-time chat
+# --------------------
+# WebSocket /ws/{thread_id}
+# --------------------
 @api.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     await websocket.accept()
@@ -110,14 +136,12 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
             prev = []
 
             if saved and "channel_values" in saved and "messages" in saved["channel_values"]:
-                prev = [ msg.model_dump() for msg in saved["channel_values"]["messages"]]
+                prev = [msg.model_dump() for msg in saved["channel_values"]["messages"]]
 
             state = State(messages=prev)
             state = add_message(state, "user", user_input.content)
 
-            # Stream assistant response
             async for event in app.astream(state.model_dump(), config={"configurable": {"thread_id": thread_id}}):
-                # Flatten event: if dict has single node key, unwrap it
                 inner = list(event.values())[0] if len(event) == 1 else event
                 messages = [msg if isinstance(msg, dict) else msg.model_dump() for msg in inner.get("messages", [])]
 
@@ -130,8 +154,7 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
                 )
 
                 await websocket.send_json(ws_payload.model_dump())
-            
-            # Send done message (optional)
+
             await websocket.send_json(Result(thread_id=thread_id, type=ResponseType.DONE).model_dump())
 
         except WebSocketDisconnect:
