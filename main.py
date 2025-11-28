@@ -143,21 +143,18 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
         thread_id = str(uuid4())
 
     saved = memory.get({"configurable": {"thread_id": thread_id}})
-    print(f"Loaded memory: {saved}")
 
-    if saved is None:
-        state = State()
-    else:
-        state = State(**saved)
+    prev_messages = []
+    if saved and "channel_values" in saved and "messages" in saved["channel_values"]:
+        prev_messages = saved["channel_values"]["messages"]
 
+    state = State(messages=prev_messages)
     state = add_message(state, "user", user_input.content)
     state.keep_going = user_input.continue_conversation
     
-    # invoke is for synchronous execution
     result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
 
-    # memory.aput({"configurable": {"thread_id": thread_id}}, result)
-    print(f"Saved memory: {result}")
+    print(f"result: {result}")
 
     return Result(**result, thread_id=thread_id) 
 
