@@ -146,14 +146,10 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
         thread_id = str(uuid4())
 
     saved = memory.get({"configurable": {"thread_id": thread_id}})
-
     prev_messages = []
+    
     if saved and "channel_values" in saved and "messages" in saved["channel_values"]:
-         # convert to proper Message objects
-        prev_messages = [
-            msg if isinstance(msg, Message) else Message(**msg.model_dump() if hasattr(msg, "model_dump") else msg)
-            for msg in saved["channel_values"]["messages"]
-        ]
+        prev_messages = saved["channel_values"]["messages"]
 
     state = State(messages=prev_messages)
     state = add_message(state, "user", user_input.content)
@@ -163,13 +159,12 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
 
     print(f"result: {result}")
 
-    memory.aput(
-        {"configurable": {"thread_id": thread_id}},
-        result,
-        {},
-        True
-    )
-
+    # await memory.aput(
+    #     {"configurable": {"thread_id": thread_id}},
+    #     result,
+    #     {},
+    #     True
+    # )
 
     return Result(**result, thread_id=thread_id) 
 
