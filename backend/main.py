@@ -155,7 +155,7 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
 
                 await websocket.send_json(ws_payload.model_dump())
 
-            await websocket.send_json(Result(thread_id=thread_id, type=ResponseType.DONE).model_dump())
+            # await websocket.send_json(Result(thread_id=thread_id, type=ResponseType.DONE, messages=messages, node="call_llm", content=messages[-1]["content"] if messages else None).model_dump())
 
         except WebSocketDisconnect:
             print(f"WebSocket disconnected: {thread_id}")

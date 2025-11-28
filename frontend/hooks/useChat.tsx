@@ -50,8 +50,8 @@ export const useChat = () => {
         setThreadId(result.thread_id);
       }
 
-      if (result.messages) {
-        setMessages((prevMessages) => [...prevMessages, ...result.messages]);
+      if (result.messages && result.messages.length > 0) {
+        setMessages(result.messages);
       }
     };
 
