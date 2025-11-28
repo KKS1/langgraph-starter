@@ -80,7 +80,10 @@ async def ask_continue(state:State) -> State:
     return state
 
 async def summarize(state:State) -> State:
-    summary_prompt = "Summarize the conversation in one sentence."
+    summary_prompt = (
+    "Summarize the entire conversation from start to now, including all user requests "
+    "and assistant responses, in one sentence."
+    )
     state = add_message(state, "user", summary_prompt)
     summary = await asyncio.to_thread(llm.invoke, [msg.model_dump() for msg in state.messages])
     state = add_message(state, "assistant", summary.content)
@@ -146,7 +149,11 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
 
     prev_messages = []
     if saved and "channel_values" in saved and "messages" in saved["channel_values"]:
-        prev_messages = saved["channel_values"]["messages"]
+         # convert to proper Message objects
+        prev_messages = [
+            msg if isinstance(msg, Message) else Message(**msg.model_dump() if hasattr(msg, "model_dump") else msg)
+            for msg in saved["channel_values"]["messages"]
+        ]
 
     state = State(messages=prev_messages)
     state = add_message(state, "user", user_input.content)
@@ -155,6 +162,14 @@ async def chat(user_input: UserInput, thread_id: str = None) -> Result:
     result = await app.ainvoke(state.model_dump(), config={"configurable": {"thread_id": thread_id}})
 
     print(f"result: {result}")
+
+    memory.aput(
+        {"configurable": {"thread_id": thread_id}},
+        result,
+        {},
+        True
+    )
+
 
     return Result(**result, thread_id=thread_id) 
 
